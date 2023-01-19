@@ -1,5 +1,11 @@
+#include <atomic>
 #include <cstdlib>
+#include <condition_variable>
 #include <iostream>
+#include <memory>
+#include <mutex>
+#include <csignal>
+#include <thread>
 
 #include "TestMsgPubSubTypes.h"
 
@@ -13,22 +19,29 @@
 #include <fastdds/dds/publisher/qos/DataWriterQos.hpp>
 #include <fastrtps/attributes/ParticipantAttributes.h>
 #include <fastrtps/attributes/PublisherAttributes.h>
+#include <mutex>
 #include <string>
+#include <vector>
 
 using namespace eprosima::fastdds::dds;
 
-class HelloWorldPublisher {
+std::mutex g_cond_mutex;
+std::condition_variable g_cond;
+std::atomic_bool g_request_exit{false};
+
+class TestPublisher {
 public:
-  HelloWorldPublisher(std::string participant_name, std::string topic_name)
+  TestPublisher(std::string participant_name, std::string topic_name)
   : participant_name_(participant_name),
     topic_name_(topic_name),
     participant_(nullptr),
     publisher_(nullptr),
     topic_(nullptr),
     writer_(nullptr),
+    stop_(false),
     type_(new TestMsgPubSubType()) {}
 
-  virtual ~HelloWorldPublisher() {
+  virtual ~TestPublisher() {
     if (writer_ != nullptr)
     {
         publisher_->delete_datawriter(writer_);
@@ -43,13 +56,16 @@ public:
     }
     DomainParticipantFactory::get_instance()->delete_participant(participant_);
 
+    if(thread_.joinable()) {
+      thread_.join();
+    }
   }
 
   //! Initialize
   bool init(bool use_env) {
     DomainParticipantQos pqos = PARTICIPANT_QOS_DEFAULT;
-    pqos.name("Participant_pub");
-    auto factory = DomainParticipantFactory::get_instance();                                                                                                           
+    pqos.name(participant_name_);
+    auto factory = DomainParticipantFactory::get_instance();
 
     if (use_env)
     {
@@ -83,7 +99,7 @@ public:
     {
         return false;
     }
-  
+
       //CREATE THE TOPIC
     TopicQos tqos = TOPIC_QOS_DEFAULT;
 
@@ -93,7 +109,7 @@ public:
     }
 
     topic_ = participant_->create_topic(
-        "HelloWorldTopic",
+        topic_name_,
         "TestMsg",
         tqos);
 
@@ -115,7 +131,7 @@ public:
         wqos,
         &listener_);
 
-    if (writer_ == nullptr)                                                                                                                                            
+    if (writer_ == nullptr)
     {
         return false;
     }
@@ -123,11 +139,21 @@ public:
     return true;
   }
 
-  //! Publish a sample
-  bool publish(bool waitForListener = true);
+  void run() {
+    auto thread_process = [this]() {
+      std::unique_lock<std::mutex> lock(cond_mutex_);
+      cond_.wait(lock, [this]{
+        return this->stop_ == true;
+      });
+    };
 
-  //! Run for number samples
-  void run(uint32_t number, uint32_t sleep);
+    thread_ = std::thread(thread_process);
+  }
+
+  void notify_exit() {
+    stop_ = true;
+    cond_.notify_one();
+  }
 
 private:
   std::string participant_name_;
@@ -143,7 +169,7 @@ private:
 
   eprosima::fastdds::dds::DataWriter *writer_;
 
-  bool stop_;
+  std::atomic_bool stop_;
 
   class PubListener : public eprosima::fastdds::dds::DataWriterListener {
   public:
@@ -167,10 +193,19 @@ private:
     }
   } listener_;
 
-  void runThread(uint32_t number, uint32_t sleep);
-
   eprosima::fastdds::dds::TypeSupport type_;
+
+  std::thread thread_;
+
+  std::mutex cond_mutex_;
+  std::condition_variable cond_;
 };
+
+void signal_handler(int signal)
+{
+  g_request_exit = true;
+  g_cond.notify_all();
+}
 
 int main(int argc, char **argv)
 {
@@ -179,7 +214,36 @@ int main(int argc, char **argv)
     return EXIT_FAILURE;
   }
 
+  int topic_num = std::stoi(argv[1]);
 
+  // Install signal handler
+  std::signal(SIGINT, signal_handler);
+  std::signal(SIGTERM, signal_handler);
+
+  const std::string participation_name_base = "pub_participation_";
+  const std::string topic_name_base = "topic_";
+  std::vector<std::shared_ptr<TestPublisher>> pub_list;
+  for(int i; i < topic_num; i++) {
+    auto pub = std::make_shared<TestPublisher>(
+        participation_name_base + std::to_string(i + 1),
+        topic_name_base + std::to_string(i + 1));
+    pub->init(false);
+    pub->run();
+    pub_list.emplace_back(pub);
+  }
+
+  if(!g_request_exit) {
+    std::unique_lock<std::mutex> lock(g_cond_mutex);
+    g_cond.wait(lock, []{
+      return g_request_exit == true;
+    });    
+  }
+
+  for (auto & pub: pub_list) {
+    pub->notify_exit();
+  }
+
+  pub_list.clear();
 
   return 0;
 }
