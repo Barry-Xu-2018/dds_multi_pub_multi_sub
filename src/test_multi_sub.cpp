@@ -214,7 +214,7 @@ int main(int argc, char **argv)
 
   for (int i=1; i <= total_participant; i++) {
     std::string topic_name = topic_name_base + std::to_string(int((i-1)/sub_num_for_one_topic)+1);
-    std::string participation_name = participation_name_base + std::to_string(i+1) + "_" + topic_name;
+    std::string participation_name = participation_name_base + std::to_string(i) + "_" + topic_name;
     auto sub = std::make_shared<TestSubscriber>(participation_name, topic_name);
     sub->init(false);
     sub_list.emplace_back(sub);
