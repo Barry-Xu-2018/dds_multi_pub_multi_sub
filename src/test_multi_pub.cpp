@@ -1,27 +1,26 @@
 #include <atomic>
-#include <cstdlib>
 #include <condition_variable>
+#include <csignal>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <csignal>
+#include <string>
 #include <thread>
+#include <vector>
 
-#include "TestMsgPubSubTypes.h"
-
-#include <fastdds/dds/publisher/DataWriterListener.hpp>
-#include <fastdds/dds/topic/TypeSupport.hpp>
 #include <fastdds/dds/domain/DomainParticipant.hpp>
 #include <fastdds/dds/domain/DomainParticipantFactory.hpp>
-#include <fastdds/dds/publisher/Publisher.hpp>
-#include <fastdds/dds/publisher/qos/PublisherQos.hpp>
 #include <fastdds/dds/publisher/DataWriter.hpp>
+#include <fastdds/dds/publisher/DataWriterListener.hpp>
+#include <fastdds/dds/publisher/Publisher.hpp>
 #include <fastdds/dds/publisher/qos/DataWriterQos.hpp>
+#include <fastdds/dds/publisher/qos/PublisherQos.hpp>
+#include <fastdds/dds/topic/TypeSupport.hpp>
 #include <fastrtps/attributes/ParticipantAttributes.h>
 #include <fastrtps/attributes/PublisherAttributes.h>
-#include <mutex>
-#include <string>
-#include <vector>
+
+#include "TestMsgPubSubTypes.h"
 
 using namespace eprosima::fastdds::dds;
 
@@ -236,7 +235,7 @@ int main(int argc, char **argv)
     std::unique_lock<std::mutex> lock(g_cond_mutex);
     g_cond.wait(lock, []{
       return g_request_exit == true;
-    });    
+    });
   }
 
   for (auto & pub: pub_list) {
@@ -245,5 +244,5 @@ int main(int argc, char **argv)
 
   pub_list.clear();
 
-  return 0;
+  return EXIT_SUCCESS;
 }

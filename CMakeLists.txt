@@ -31,4 +31,7 @@ endif()
 add_executable(test_multi_pub src/test_multi_pub.cpp src/TestMsg.cxx src/TestMsgPubSubTypes.cxx)
 target_link_libraries(test_multi_pub fastrtps fastcdr fastdds::optionparser)
 
+add_executable(test_multi_sub src/test_multi_sub.cpp src/TestMsg.cxx src/TestMsgPubSubTypes.cxx)
+target_link_libraries(test_multi_sub fastrtps fastcdr fastdds::optionparser)
+
 
