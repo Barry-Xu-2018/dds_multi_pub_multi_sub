@@ -209,7 +209,7 @@ void signal_handler(int signal)
 int main(int argc, char **argv)
 {
   if (argc != 2) {
-    std::printf("Usage: %s Topic_Num", argv[0]);
+    std::printf("Usage: %s Topic_Num\n", argv[0]);
     return EXIT_FAILURE;
   }
 

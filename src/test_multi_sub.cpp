@@ -193,7 +193,7 @@ void signal_handler(int signal)
 int main(int argc, char **argv)
 {
   if (argc != 3) {
-    std::printf("Usage: %s Topic_Num Sub_Num_For_One_Topic", argv[0]);
+    std::printf("Usage: %s Topic_Num Sub_Num_For_One_Topic\n", argv[0]);
     return EXIT_FAILURE;
   }
 
