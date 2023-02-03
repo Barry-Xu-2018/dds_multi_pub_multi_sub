@@ -222,7 +222,7 @@ int main(int argc, char **argv)
   const std::string participation_name_base = "pub_participation_";
   const std::string topic_name_base = "topic_";
   std::vector<std::shared_ptr<TestPublisher>> pub_list;
-  for(int i; i < topic_num; i++) {
+  for(int i = 0; i < topic_num; i++) {
     auto pub = std::make_shared<TestPublisher>(
         participation_name_base + std::to_string(i + 1),
         topic_name_base + std::to_string(i + 1));
