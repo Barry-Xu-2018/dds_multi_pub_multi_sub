@@ -5,6 +5,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -19,40 +20,49 @@
 #include <fastdds/dds/topic/TypeSupport.hpp>
 #include <fastrtps/attributes/ParticipantAttributes.h>
 #include <fastrtps/attributes/PublisherAttributes.h>
+#include <fastrtps/transport/UDPv4TransportDescriptor.h>
 
 #include "TestMsgPubSubTypes.h"
 
 using namespace eprosima::fastdds::dds;
+using namespace eprosima::fastrtps::rtps;
 
 std::mutex g_cond_mutex;
 std::condition_variable g_cond;
 std::atomic_bool g_request_exit{false};
 
+#define PUBLISHER_NUM_PER_PARTICIPANT 10
+
 class TestPublisher {
 public:
-  TestPublisher(std::string participant_name, std::string topic_name)
+  TestPublisher(std::string participant_name, std::string topic_name_base, uint32_t topic_index)
   : participant_name_(participant_name),
-    topic_name_(topic_name),
+    topic_name_base_(topic_name_base),
+    topic_index_(topic_index),
     participant_(nullptr),
-    publisher_(nullptr),
-    topic_(nullptr),
-    writer_(nullptr),
+    publishers_({}),
+    topics_({}),
+    writers_({}),
     stop_(false),
     type_(new TestMsgPubSubType()) {}
 
   virtual ~TestPublisher() {
-    if (writer_ != nullptr)
-    {
-        publisher_->delete_datawriter(writer_);
+
+    int index = 0;
+    for(auto pub: publishers_) {
+      if (pub != nullptr) {
+        if (writers_[index] != nullptr) {
+          pub->delete_datawriter(writers_[index]);
+        }
+        index++;
+        participant_->delete_publisher(pub);
+      }
     }
-    if (publisher_ != nullptr)
-    {
-        participant_->delete_publisher(publisher_);
+
+    for(auto topic: topics_) {
+      participant_->delete_topic(topic);
     }
-    if (topic_ != nullptr)
-    {
-        participant_->delete_topic(topic_);
-    }
+
     DomainParticipantFactory::get_instance()->delete_participant(participant_);
 
     if(thread_.joinable()) {
@@ -66,73 +76,90 @@ public:
     pqos.name(participant_name_);
     auto factory = DomainParticipantFactory::get_instance();
 
-    if (use_env)
-    {
-        factory->load_profiles();
-        factory->get_default_participant_qos(pqos);
+    if (use_env) {
+      factory->load_profiles();
+      factory->get_default_participant_qos(pqos);
     }
 
-    participant_ = factory->create_participant(0, pqos);
+    #if 0
+    // Create a descriptor for the new transport.
+    auto udp_transport = std::make_shared<UDPv4TransportDescriptor>();
+    udp_transport->sendBufferSize = 9216;
+    udp_transport->receiveBufferSize = 9216;
+    udp_transport->maxMessageSize = 9216;
+    udp_transport->non_blocking_send = true;
 
-    if (participant_ == nullptr)
-    {
-        return false;
+    // Link the Transport Layer to the Participant.
+    pqos.transport().user_transports.push_back(udp_transport);
+
+    // Avoid using the default transport
+    pqos.transport().use_builtin_transports = false;
+    #endif
+
+    participant_ = factory->create_participant(6, pqos);
+
+    if (participant_ == nullptr) {
+      return false;
     }
 
-    //REGISTER THE TYPE
+    // Register the type
     type_.register_type(participant_);
 
-    //CREATE THE PUBLISHER
+    // Get the publisher QOS
     PublisherQos pubqos = PUBLISHER_QOS_DEFAULT;
 
-    if (use_env)
-    {
-        participant_->get_default_publisher_qos(pubqos);
+    if (use_env) {
+      participant_->get_default_publisher_qos(pubqos);
     }
 
-    publisher_ = participant_->create_publisher(
+    // Get the topic QOS
+    TopicQos tqos = TOPIC_QOS_DEFAULT;
+
+    if (use_env) {
+      participant_->get_default_topic_qos(tqos);
+    }
+
+    for(int i = 0; i < PUBLISHER_NUM_PER_PARTICIPANT; i++) {
+      auto pub = participant_->create_publisher(
         pubqos,
         nullptr);
 
-    if (publisher_ == nullptr)
-    {
-        return false;
-    }
+      if (pub == nullptr) {
+        throw std::runtime_error("Create publisher failed !");
+      }
 
-      //CREATE THE TOPIC
-    TopicQos tqos = TOPIC_QOS_DEFAULT;
+      publishers_.emplace_back(pub);
 
-    if (use_env)
-    {
-        participant_->get_default_topic_qos(tqos);
-    }
-
-    topic_ = participant_->create_topic(
-        topic_name_,
+      auto cur_topic_index = topic_index_ + i;
+      auto cur_topic_name = topic_name_base_ + std::to_string(cur_topic_index);
+      auto topic = participant_->create_topic(
+        cur_topic_name,
         "TestMsg",
         tqos);
 
-    if (topic_ == nullptr)
-    {
-        return false;
-    }
+      if (topic == nullptr) {
+        throw std::runtime_error("Create topic failed !");
+      }
 
-    // CREATE THE WRITER
-    DataWriterQos wqos = DATAWRITER_QOS_DEFAULT;
+      topics_.emplace_back(topic);
 
-    if (use_env)
-    {
-        publisher_->get_default_datawriter_qos(wqos);
-    }
+      // Get the datawriter QOS
+      DataWriterQos wqos = DATAWRITER_QOS_DEFAULT;
 
-    writer_ = publisher_->create_datawriter(
-        topic_,
+      if (use_env) {
+        pub->get_default_datawriter_qos(wqos);
+      }
+
+      auto writer = pub->create_datawriter(
+        topic,
         wqos,
         &listener_);
 
-    if (writer_ == nullptr)
-    {
-        return false;
+      if (writer == nullptr) {
+        throw std::runtime_error("Create datawriter failed !");
+      }
+
+      writers_.emplace_back(writer);
     }
 
     return true;
@@ -156,17 +183,18 @@ public:
 
 private:
   std::string participant_name_;
-  std::string topic_name_;
+  std::string topic_name_base_;
+  uint32_t topic_index_;
 
   TestMsg msg_;
 
   eprosima::fastdds::dds::DomainParticipant *participant_;
 
-  eprosima::fastdds::dds::Publisher *publisher_;
+  std::vector<eprosima::fastdds::dds::Publisher *> publishers_;
 
-  eprosima::fastdds::dds::Topic *topic_;
+  std::vector<eprosima::fastdds::dds::Topic *> topics_;
 
-  eprosima::fastdds::dds::DataWriter *writer_;
+  std::vector<eprosima::fastdds::dds::DataWriter *> writers_;
 
   std::atomic_bool stop_;
 
@@ -209,11 +237,11 @@ void signal_handler(int signal)
 int main(int argc, char **argv)
 {
   if (argc != 2) {
-    std::printf("Usage: %s Topic_Num\n", argv[0]);
+    std::printf("Usage: %s Participant_Num\n", argv[0]);
     return EXIT_FAILURE;
   }
 
-  int topic_num = std::stoi(argv[1]);
+  int participant_num = std::stoi(argv[1]);
 
   // Install signal handler
   std::signal(SIGINT, signal_handler);
@@ -221,14 +249,17 @@ int main(int argc, char **argv)
 
   const std::string participation_name_base = "pub_participation_";
   const std::string topic_name_base = "topic_";
+  uint32_t topic_index = 1;
   std::vector<std::shared_ptr<TestPublisher>> pub_list;
-  for(int i = 0; i < topic_num; i++) {
+  for(int i = 0; i < participant_num; i++) {
     auto pub = std::make_shared<TestPublisher>(
         participation_name_base + std::to_string(i + 1),
-        topic_name_base + std::to_string(i + 1));
+        topic_name_base,
+        topic_index);
     pub->init(false);
     pub->run();
     pub_list.emplace_back(pub);
+    topic_index += PUBLISHER_NUM_PER_PARTICIPANT;
   }
 
   if(!g_request_exit) {
