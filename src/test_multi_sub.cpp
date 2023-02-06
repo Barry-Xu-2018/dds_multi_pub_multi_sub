@@ -100,7 +100,7 @@ public:
     pqos.transport().use_builtin_transports = false;
     #endif
 
-    participant_ = factory->create_participant(1, pqos);
+    participant_ = factory->create_participant(0, pqos);
 
     if (participant_ == nullptr)
     {
