@@ -73,13 +73,13 @@ public:
   //! Initialize
   bool init(bool use_env) {
     DomainParticipantQos pqos = PARTICIPANT_QOS_DEFAULT;
-    pqos.name(participant_name_);
     auto factory = DomainParticipantFactory::get_instance();
 
     if (use_env) {
       factory->load_profiles();
       factory->get_default_participant_qos(pqos);
     }
+    pqos.name(participant_name_);
 
     #if 0
     // Create a descriptor for the new transport.
@@ -94,6 +94,13 @@ public:
 
     // Avoid using the default transport
     pqos.transport().use_builtin_transports = false;
+
+    //Locator_t default_unicast_locator;
+    //pqos.wire_protocol().builtin.metatrafficUnicastLocatorList.push_back(default_unicast_locator);
+
+    //Locator_t initial_peer;
+    //IPLocator::setIPv4(initial_peer, 192, 168, 0, 108);
+    //pqos.wire_protocol().builtin.initialPeersList.push_back(initial_peer);
     #endif
 
     participant_ = factory->create_participant(6, pqos);
@@ -256,7 +263,7 @@ int main(int argc, char **argv)
         participation_name_base + std::to_string(i + 1),
         topic_name_base,
         topic_index);
-    pub->init(false);
+    pub->init(true);
     pub->run();
     pub_list.emplace_back(pub);
     topic_index += PUBLISHER_NUM_PER_PARTICIPANT;

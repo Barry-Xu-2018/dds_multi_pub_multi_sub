@@ -77,7 +77,6 @@ public:
   bool init(bool use_env)
   {
     DomainParticipantQos pqos = PARTICIPANT_QOS_DEFAULT;
-    pqos.name(participant_name_);
     auto factory = DomainParticipantFactory::get_instance();
 
     if (use_env)
@@ -85,6 +84,8 @@ public:
         factory->load_profiles();
         factory->get_default_participant_qos(pqos);
     }
+
+    pqos.name(participant_name_);
 
     #if 0
     // Create a descriptor for the new transport.
@@ -99,6 +100,13 @@ public:
 
     // Avoid using the default transport
     pqos.transport().use_builtin_transports = false;
+
+    //Locator_t default_unicast_locator;
+    //pqos.wire_protocol().builtin.metatrafficUnicastLocatorList.push_back(default_unicast_locator);
+
+    //Locator_t initial_peer;
+    //IPLocator::setIPv4(initial_peer, 192, 168, 0, 122);
+    //pqos.wire_protocol().builtin.initialPeersList.push_back(initial_peer);
     #endif
 
     participant_ = factory->create_participant(6, pqos);
@@ -247,7 +255,7 @@ int main(int argc, char **argv)
   for (int i=1; i <= participant_num; i++) {
     std::string participation_name = participation_name_base + std::to_string(i);
     auto sub = std::make_shared<TestSubscriber>(participation_name, topic_name_base, topic_index);
-    sub->init(false);
+    sub->init(true);
     sub_list.emplace_back(sub);
     topic_index += SUBSCRIBER_NUM_PER_PARTICIPANT;
     std::this_thread::sleep_for(std::chrono::microseconds(50));
